@@ -1,0 +1,132 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  "Description" : "Instancia_Linux",
+  "Parameters": {
+    "IdImagen": {
+      "Type": "String",
+      "Description": "Imagen para la instancia (ami-922914f7 Amazon Linux 2018.03, ami-f4e6da91 SLES12SP3",
+      "AllowedValues": [ "ami-0022f774911c1d690", "ami-06eecef118bbf9259" ]
+    },
+    "TipoInstancia": {
+      "Type": "String",
+      "Description": "Tipo de instancia",
+      "AllowedValues": [ "t2.micro", "t2.small" ],
+      "Default": "t2.micro"
+    },
+    "ParClave": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "Par de claves para acceder a la instancia",
+      "AllowedPattern" : ".+",
+	  "Default": "luis_dev",
+      "ConstraintDescription": "Es obligatorio seleccionar un par de claves"
+    },
+    "AvailabilityZone": {
+        "Type": "String",
+        "Description": "Zona de disponibilidad",
+        "AllowedValues": [ "us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d" ],
+        "Default": "us-east-1b"
+      }
+    },
+  "Resources" : {
+    "InstanceSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+          "GroupDescription" : "Allow http to client host", 
+          "VpcId" : "vpc-0463c723f7d6c79b0",         
+          "SecurityGroupIngress" : [{
+              "IpProtocol" : "tcp",
+              "FromPort" : 80,
+              "ToPort" : 80,
+              "CidrIp" : "0.0.0.0/0"
+          }],
+          "SecurityGroupEgress" : [{
+              "IpProtocol" : "tcp",
+              "FromPort" : 80,
+              "ToPort" : 80,
+              "CidrIp" : "0.0.0.0/0"
+          }]
+      }
+  },
+    "InstanciaLinux": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": { "Ref": "IdImagen" },
+        "InstanceType": { "Ref": "TipoInstancia" },
+        "KeyName": { "Ref": "ParClave" },
+        "AvailabilityZone" : { "Ref": "AvailabilityZone" },
+        "SecurityGroupsIds" : [ { "Ref": "InstanceSecurityGroup"  } ],        
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/xvda",
+            "Ebs": {
+              "VolumeType": "gp3",
+              "VolumeSize": "8",
+              "DeleteOnTermination":"true",
+              "Encrypted": "false"             
+			  }
+			}
+			],
+          "UserData": {
+          "Fn::Base64" : {
+            "Fn::Join" : ["\n", [ "#!/bin/bash -xe",
+                                  "while [ ! -e /dev/sdb ]; do echo Esperando al disco; sleep 10; done",
+                                  "mkfs.ext3 /dev/sdb",
+                                  "echo '/dev/sdb /mnt/ ext3 defaults,auto 0 0' >> /etc/fstab",
+                                  "mount /mnt" ]
+                         ]
+          }
+         },
+         "Tags" : [
+            {
+               "Key" : "Name",
+               "Value": {
+                "Ref": "AWS::StackName"
+              }
+            },
+            {
+               "Key" : "Owner",
+               "Value" : "LRDCH"
+            }
+         ]         
+        }
+    },        
+    "VolumenGp3": {
+      "Type": "AWS::EC2::Volume",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::GetAtt": [ "InstanciaLinux", "AvailabilityZone" ] },
+        "Size": "1",
+        "VolumeType": "gp3",        
+        "Tags" : [
+            {
+               "Key" : "Name",
+               "Value": {
+                "Ref": "AWS::StackName"                
+              } 
+            },             
+            {
+               "Key" : "Owner",
+               "Value" : "LRDCH"
+            }
+         ] 
+      }
+    },
+    "MiVolumenMontaje": {
+      "Type" : "AWS::EC2::VolumeAttachment",
+      "Properties" : {
+        "InstanceId" : { "Ref" : "InstanciaLinux" },
+        "VolumeId"  : { "Ref" : "VolumenGp3" },
+        "Device" : "/dev/sdb"
+      }
+    }
+  },
+  "Outputs": {
+    "IpPublica": {
+      "Description" : "IP publica de la instancia",
+      "Value" : { "Fn::GetAtt": [ "InstanciaLinux", "PublicIp" ] }
+    },
+    "outputInstanceSecurityGroup": {
+    "Description": "A reference to the created security group",
+    "Value": { "Fn::GetAtt": [ "InstanceSecurityGroup", "GroupId" ] }
+    }
+  }
+}
